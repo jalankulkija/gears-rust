@@ -1066,7 +1066,7 @@ help.RELEASE.text = Build an optimized (release) image instead of a dev build.
 
 # -------- Main targets --------
 
-.PHONY: all dist check gear-ci ci_test ci_docs build build-debug .cargo-build .split-debug quickstart example run full-make-matrix
+.PHONY: all dist check gear-ci ci_test ci_docs build build-debug .cargo-build .split-debug quickstart example run full-make-matrix genai-security genai-security-setup onnx-models-fetch onnxruntime-fetch
 
 # Start server with quickstart config
 quickstart:
@@ -1077,6 +1077,31 @@ quickstart:
 example:
 	$(call print_target_banner)
 	$(MAKE) run GEAR=
+
+## Fetch the pinned ONNX model artifacts that config/genai-security.yaml's
+## onnx-scanner backend needs — run once before 'make genai-security' if
+## gears/prompt-scanner/plugins/onnx-scanner/models/ is empty.
+genai-security-setup: onnx-models-fetch onnxruntime-fetch
+
+## Download onnx-scanner's model artifacts by pinned revision, with sha256
+## verification (see gears/prompt-scanner/plugins/onnx-scanner/docs/runtime/DESIGN.md's "Model provisioning"
+## decision — dev/CI/testing convenience only).
+onnx-models-fetch:
+	bash gears/prompt-scanner/plugins/onnx-scanner/scripts/fetch-models.sh
+
+## Download the ONNX Runtime shared library that file-parser (magika feature)
+## and onnx-scanner both dlopen at run time. Required because the workspace pins
+## `ort` with `load-dynamic`; without it `ort` 2.0.0-rc.12 hangs instead of
+## erroring. Same script CI uses, so the pinned version cannot drift.
+onnxruntime-fetch:
+	bash scripts/fetch-onnxruntime.sh
+
+## Run the GenAI Security pipeline: forward-proxy + prompt-scanner + its
+## scanner backend plugins (all one process, config/genai-security.yaml),
+## no Python dependencies. Ctrl+C tears it down. Run 'make genai-security-setup'
+## once first to fetch onnx-scanner's model.
+genai-security:
+	./scripts/run-genai-security.sh
 
 # Server presets for `make run PRESET=<preset>`: Cargo features, config file
 # (default config/quickstart.yaml) and an optional command run before the server.

@@ -1,0 +1,106 @@
+[package]
+name = "cf-gears-onnx-scanner"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ONNX-model-backed PII detector plugin for prompt-scanner, running its models in-process on the toolkit ONNX session"
+repository.workspace = true
+keywords = ["constructorfabric", "cf-gears"]
+categories = ["web-programming"]
+metadata.docs.rs.all-features = true
+
+[lib]
+name = "onnx_scanner"
+
+[lints]
+workspace = true
+
+[features]
+# Detection-quality evaluation tooling (docs/benchmarks/QUALITY-EVALUATION.md).
+# Off by default: the shipped plugin has no business carrying it.
+eval = []
+# Tests that need a real ONNX model on disk (fetched by
+# `scripts/fetch-models.sh`, never committed). Off by default so `cargo test`
+# works in a clean checkout.
+real-model-tests = []
+# ONNX graph generation, for the committed test fixture and benchmark model
+# ladders. Never enabled by the plugin itself.
+fixture-gen = ["dep:prost"]
+
+# Needs `eval`; without this, `cargo test` would try to build it unconditionally.
+[[bin]]
+name = "evaluate"
+required-features = ["eval"]
+
+# Needs `fixture-gen`; without this the default `cargo test`, which builds
+# examples, would fail on the gated `fixture` module.
+[[example]]
+name = "generate_test_fixture"
+required-features = ["fixture-gen"]
+
+[dependencies]
+# Local dependencies
+prompt-scanner-sdk = { package = "cf-gears-prompt-scanner-sdk", version = "0.1.0", path = "../../prompt-scanner-sdk" }
+# The ONNX Runtime session: the pinned `ort`, an open under a deadline on an
+# abandonable thread, exclusive use of one session. Everything else a model
+# host needs is in `src/runtime/`.
+toolkit-onnx-runtime = { workspace = true }
+types-registry-sdk = { package = "cf-gears-types-registry-sdk", version = "0.3.2", path = "../../../system/types-registry/types-registry-sdk" }
+types-registry = { workspace = true }
+
+# ToolKit dependencies
+toolkit = { workspace = true }
+toolkit-macros = { workspace = true }
+toolkit-security = { workspace = true }
+
+# Async runtime
+async-trait = { workspace = true }
+# `rt` for `spawn_blocking` (inference and tokenization never run on an async
+# worker), `sync` for the per-replica async mutex and the in-flight semaphore.
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+# `CancellationToken`, so a wedged model load does not block graceful shutdown.
+tokio-util = { workspace = true }
+
+# Model host: tokenization, artifact integrity, configuration, telemetry.
+# `onig`, as the standalone runner had it: the regex engine decides how the
+# tokenizer pre-splits text, so it is not switched casually.
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
+sha2 = { workspace = true }
+humantime-serde = { workspace = true }
+opentelemetry = { workspace = true }
+axum = { workspace = true }
+prost = { workspace = true, optional = true }
+
+# GLiNER2 word splitting
+regex = { workspace = true }
+
+# Data types
+uuid = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Required by toolkit::gear macro
+inventory = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
+tempfile = { workspace = true }
+# Parses docs/runtime/config-example.yaml in a test, with the same duplicate-key-
+# rejecting parser the server's config loader uses — so the reference config
+# cannot drift from the structs it documents.
+serde-saphyr = { workspace = true }
+tracing-subscriber = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+utoipa = { workspace = true }

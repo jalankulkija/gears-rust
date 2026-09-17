@@ -1,0 +1,5 @@
+# Fetched benchmark corpora are not committed: they carry their own terms,
+# they are large, and they are reproducible from scripts/fetch-eval-corpora.sh
+# at a pinned revision. Hand-written corpora and taxonomy maps are.
+*.json
+!taxonomy/

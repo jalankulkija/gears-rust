@@ -1,0 +1,21 @@
+&cf-gears-onnx-runner fixture generator:ì
+"
+idsids_outecho_ids"Identity
+(
+weightsscoresecho_scores"Identitycf_gears_test_fixtureZ
+ids
+
+batch
+seqZ!
+weights
+
+batch
+seqb!
+ids_out
+
+batch
+seqb 
+scores
+
+batch
+seqB

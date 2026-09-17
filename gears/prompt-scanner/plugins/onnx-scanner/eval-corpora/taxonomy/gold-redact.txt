@@ -1,0 +1,41 @@
+# REDACT gold types -> the canonical space this comparison scores in.
+#
+# Coarser than REDACT's 51 types on purpose. No model here distinguishes a work
+# email from a personal one or a given name from a surname, so scoring at that
+# granularity would measure the annotation scheme rather than the detector.
+#
+# A REDACT type absent from this file is EXCLUDED from the comparison, not
+# counted as a miss: no model is asked about it, so scoring it would depress
+# every result equally and tell us nothing. What is left is the set at least
+# one candidate model claims to detect.
+
+Full_Name=PERSON
+First_Given_Name=PERSON
+Last_Family_Name=PERSON
+
+Work_Email_Address=EMAIL
+Personal_Email_Address=EMAIL
+
+Telephone_Numbers_Personal=PHONE
+Telephone_Numbers_Work=PHONE
+
+Address_Personal=ADDRESS
+Address_Work=ADDRESS
+City=ADDRESS
+State=ADDRESS
+Postal_Code=ADDRESS
+Location=ADDRESS
+
+Credit_Card_Numbers=CREDIT_CARD
+Bank_Account_Number=ACCOUNT
+
+National_Identification_Number=ID
+Passport_Number=ID
+Drivers_License_Number=ID
+Social_Security_Number=ID
+Tax_Identification_Number=ID
+
+Date_of_Birth=DOB
+Static_IP_Address=IP
+Social_Media_Identifiers=USERNAME
+Org_Name=ORG

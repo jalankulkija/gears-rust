@@ -93,6 +93,11 @@ body = """
 # ─────────────────────────────────────────────────────────────────────────────
 
 [[package]]
+name = "cf-gears-ort-bootstrap"
+changelog_update = false
+git_release_enable = false
+
+[[package]]
 name = "cf-gears-toolkit"
 changelog_update = true
 git_release_enable = true

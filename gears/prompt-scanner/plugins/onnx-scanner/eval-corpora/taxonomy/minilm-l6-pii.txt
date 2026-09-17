@@ -1,0 +1,61 @@
+# minilm-l6-pii -> canonical. Categories are post-BIO-merge.
+email=EMAIL
+first_name=PERSON
+last_name=PERSON
+phone_number=PHONE
+credit_debit_card=CREDIT_CARD
+street_address=ADDRESS
+city=ADDRESS
+postcode=ADDRESS
+state=ADDRESS
+country=ADDRESS
+company_name=ORG
+account_number=ACCOUNT
+ssn=ID
+national_id=ID
+tax_id=ID
+date_of_birth=DOB
+user_name=USERNAME
+password=SECRET
+api_key=SECRET
+url=URL
+ipv4=IP
+ipv6=IP
+date=DATE
+time=DATE
+date_time=DATE
+age=AGE
+occupation=OCCUPATION
+
+# Categories minilm emits that the gold scope does not cover. Mapped so they
+# are recognised and reported as out-of-scope rather than counted as unmapped
+# (which would invalidate the run) or as false positives (which would blame the
+# model for detecting more than we chose to measure).
+employee_id=OUT_OF_SCOPE
+customer_id=OUT_OF_SCOPE
+unique_id=OUT_OF_SCOPE
+certificate_license_number=OUT_OF_SCOPE
+medical_record_number=OUT_OF_SCOPE
+health_plan_beneficiary_number=OUT_OF_SCOPE
+biometric_identifier=OUT_OF_SCOPE
+device_identifier=OUT_OF_SCOPE
+vehicle_identifier=OUT_OF_SCOPE
+license_plate=OUT_OF_SCOPE
+mac_address=OUT_OF_SCOPE
+http_cookie=OUT_OF_SCOPE
+coordinate=OUT_OF_SCOPE
+county=OUT_OF_SCOPE
+fax_number=OUT_OF_SCOPE
+cvv=OUT_OF_SCOPE
+pin=OUT_OF_SCOPE
+swift_bic=OUT_OF_SCOPE
+bank_routing_number=OUT_OF_SCOPE
+blood_type=OUT_OF_SCOPE
+gender=OUT_OF_SCOPE
+race_ethnicity=OUT_OF_SCOPE
+religious_belief=OUT_OF_SCOPE
+political_view=OUT_OF_SCOPE
+sexuality=OUT_OF_SCOPE
+education_level=OUT_OF_SCOPE
+employment_status=OUT_OF_SCOPE
+language=OUT_OF_SCOPE

@@ -76,6 +76,7 @@ members = [
     "libs/toolkit-sdk",
     "libs/toolkit-odata-macros",
     "libs/toolkit-security",
+    "libs/ort-bootstrap",
     "libs/toolkit-odata",
     "libs/toolkit-policy-evaluation",
     "libs/toolkit-node-info",
@@ -202,6 +203,15 @@ members = [
     "gears/system/admission-control/admission-control",
     "gears/system/policy-engine/policy-engine-sdk",
     "gears/system/policy-engine/policy-engine",
+    "gears/prompt-scanner/prompt-scanner-sdk",
+    "gears/prompt-scanner/prompt-scanner",
+    "gears/prompt-scanner/plugins/always-allow-plugin",
+    "gears/prompt-scanner/plugins/regex-scanner",
+    "gears/prompt-scanner/plugins/onnx-scanner",
+    "gears/prompt-scanner/plugins/demo-policy-console",
+    "gears/forward-proxy/forward-proxy-sdk",
+    "gears/forward-proxy/forward-proxy",
+    "gears/forward-proxy/plugins/openai-interceptor-plugin",
 ]
 exclude = ["tools/fuzz"]
 resolver = "3"
@@ -367,6 +377,9 @@ toolkit-odata-macros = { package = "cf-gears-toolkit-odata-macros", version = "0
 toolkit-policy-evaluation = { package = "cf-gears-toolkit-policy-evaluation", version = "0.1.0", path = "libs/toolkit-policy-evaluation" }
 toolkit-sdk = { package = "cf-gears-toolkit-sdk", version = "0.7.13", path = "libs/toolkit-sdk" }
 toolkit-security = { package = "cf-gears-toolkit-security", version = "0.11.0", path = "libs/toolkit-security" }
+# Bounded, abandonable init for the gears that dlopen ONNX Runtime (file-parser
+# behind `magika`, the toolkit ONNX session always). See that crate's docs for the `ort` hang.
+ort-bootstrap = { package = "cf-gears-ort-bootstrap", version = "0.1.0", path = "libs/ort-bootstrap" }
 toolkit-stable-hash = { package = "cf-gears-toolkit-stable-hash", version = "0.1.0", path = "libs/toolkit-stable-hash" }
 toolkit-transport-grpc = { package = "cf-gears-toolkit-transport-grpc", version = "0.9.0", path = "libs/toolkit-transport-grpc" }
 toolkit-taskward = { package = "cf-gears-toolkit-taskward", version = "0.1.0", path = "libs/toolkit-taskward" }

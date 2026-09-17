@@ -1,0 +1,39 @@
+[package]
+name = "cf-gears-prompt-scanner-sdk"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SDK for prompt-scanner gear: API traits, models, and error definitions"
+repository.workspace = true
+readme = "README.md"
+keywords = ["constructorfabric", "cf-gears"]
+categories = ["web-programming"]
+metadata.docs.rs.all-features = true
+
+[lib]
+name = "prompt_scanner_sdk"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+
+# OData filter field definitions
+toolkit-odata = { workspace = true }
+toolkit-odata-macros = { workspace = true }
+
+# GTS types
+gts = { workspace = true }
+toolkit-gts = { workspace = true }
+
+# ToolKit dependencies
+toolkit = { workspace = true }
+toolkit-security = { workspace = true }

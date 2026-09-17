@@ -1,0 +1,24 @@
+&cf-gears-onnx-runner fixture generator:‚
++
+tokens
+tokens_outecho_tokens"Identity
+(
+marks	marks_out
+echo_marks"Identitycf_gears_test_fixture_otherZ 
+tokens
+
+batch
+seqZ
+marks
+	
+batch
+seqb$
+
+tokens_out
+
+batch
+seqb#
+	marks_out
+	
+batch
+seqB
