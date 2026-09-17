@@ -31,7 +31,7 @@ default = []
 # weights, and needs libonnxruntime at runtime (dlopen via `ORT_DYLIB_PATH`).
 # Enable when callers cannot be trusted to send correct filenames or
 # Content-Type headers.
-magika = ["dep:magika", "dep:ort", "dep:tokio-util"]
+magika = ["dep:magika", "dep:ort", "dep:tokio-util", "dep:ort-bootstrap"]
 
 [dependencies]
 # Local dependencies
@@ -80,6 +80,9 @@ kreuzberg = { workspace = true }
 # Content-based file type detection (optional, behind the `magika` feature)
 magika = { workspace = true, optional = true }
 ort = { workspace = true, optional = true }
+# Bounded, abandonable init — `ort` hangs instead of erroring on a bad ONNX
+# Runtime. Shared with onnx-runner.
+ort-bootstrap = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 
 # MIME type parsing

@@ -1,0 +1,106 @@
+[package]
+name = "cf-gears-onnx-runner"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generic ONNX model execution gear: tensor in/out + tokenization, no model-family-specific logic"
+repository.workspace = true
+readme = "README.md"
+keywords = ["constructorfabric", "cf-gears"]
+categories = ["web-programming"]
+metadata.docs.rs.all-features = true
+
+[lib]
+name = "onnx_runner"
+
+# Needs `fixture-gen`; without this the default `cargo test`, which builds
+# examples, would fail on the gated `fixture` module.
+[[example]]
+name = "generate_test_fixture"
+required-features = ["fixture-gen"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local dependencies
+onnx-runner-sdk = { package = "cf-gears-onnx-runner-sdk", version = "0.1.0", path = "../onnx-runner-sdk" }
+
+# ONNX Runtime — pinned exactly (rc-to-rc API churn across `ort` 2.x is
+# real). Forced to rc.12, matching the workspace-wide pin `file-parser`'s
+# `magika` feature requires transitively (the `magika` crate itself hard-pins
+# `ort = "=2.0.0-rc.12"`) — a single workspace can only have one exact
+# version of a crate, so this can't independently track a newer rc.
+# `download-binaries`/`copy-dylibs` are deliberately NOT enabled: they link
+# ONNX Runtime statically, which conflicts with the workspace-wide
+# `load-dynamic` (Cargo unifies features, so this crate cannot opt out of it)
+# and reliably deadlocks `ort` 2.0.0-rc.12 instead of erroring. The runtime is
+# resolved from `ORT_DYLIB_PATH` at process start, exactly as `file-parser`
+# does — see `scripts/fetch-onnxruntime.sh` and `load_models` in `src/gear.rs`.
+ort = { workspace = true, features = ["std"] }
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
+sha2 = { workspace = true }
+
+# Async runtime
+async-trait = { workspace = true }
+# `rt` for `spawn_blocking` (inference and tokenization never run on an async
+# worker) and `sync` for the per-replica async mutex.
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+# `CancellationToken`, so a wedged model load does not block graceful shutdown.
+tokio-util = { workspace = true }
+
+# Bounded, abandonable model loading — `ort` hangs instead of erroring on a bad
+# ONNX Runtime. Shared with file-parser's `magika` feature.
+ort-bootstrap = { workspace = true }
+
+# ToolKit dependencies
+axum = { workspace = true }
+toolkit = { workspace = true }
+toolkit-macros = { workspace = true }
+toolkit-security = { workspace = true }
+
+# Error handling and serialization
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+humantime-serde = { workspace = true }
+
+# Required by toolkit::gear macro
+inventory = { workspace = true }
+
+# ONNX graph generation for fixtures/benchmarks (feature `fixture-gen` only).
+# ONNX is protobuf, which avoids needing Python's onnx tooling.
+prost = { workspace = true, optional = true }
+
+# Logging and metrics
+tracing = { workspace = true }
+opentelemetry = { workspace = true }
+
+[features]
+# Tests that need a real ONNX model on disk (fetched by
+# `scripts/fetch-models.sh`, never committed). Off by default so `cargo test`
+# works in a clean checkout; see `docs/features/test-suite.md` for the fixture
+# model that will replace this.
+real-model-tests = []
+# ONNX graph generation, for the committed test fixture and the benchmark's
+# synthetic model ladder. Never enabled by the gear itself.
+fixture-gen = ["dep:prost"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+# Parses docs/config-example.yaml in a test, with the same duplicate-key-rejecting
+# parser the server's config loader uses — so the reference config cannot drift
+# from the structs it documents.
+serde-saphyr = { workspace = true }
+tokio-util = { workspace = true }
+anyhow = { workspace = true }
+toolkit-security = { workspace = true }
+uuid = { workspace = true }
+tracing-subscriber = { workspace = true }
+axum = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+utoipa = { workspace = true }

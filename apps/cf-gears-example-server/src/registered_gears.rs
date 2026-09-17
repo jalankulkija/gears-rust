@@ -124,3 +124,27 @@ use bss_pricing as _;
 use admission_control as _;
 #[cfg(feature = "bss-approvals")]
 use bss_approvals as _;
+
+#[cfg(feature = "prompt-scanner-example")]
+use prompt_scanner as _;
+
+#[cfg(feature = "prompt-scanner-example")]
+use always_allow_plugin as _;
+
+#[cfg(feature = "prompt-scanner-example")]
+use regex_scanner as _;
+
+#[cfg(feature = "prompt-scanner-example")]
+use onnx_runner as _;
+
+#[cfg(feature = "prompt-scanner-example")]
+use onnx_scanner as _;
+
+#[cfg(feature = "demo-policy-console")]
+use demo_policy_console as _;
+
+#[cfg(feature = "forward-proxy-example")]
+use forward_proxy as _;
+
+#[cfg(feature = "forward-proxy-example")]
+use openai_interceptor_plugin as _;

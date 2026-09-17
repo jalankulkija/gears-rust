@@ -1,0 +1,14 @@
+# prompt-scanner gear config, merged in via config/genai-security.yaml's
+# `gears_dir` (see also `make genai-security` in the root Makefile). Only
+# needed when the server is built with a feature that pulls in prompt-scanner
+# (`prompt-scanner-example` or `forward-proxy-example`).
+database:
+  server: sqlite_users
+  file: "prompt_scanner.db"
+config:
+  # What every tenant gets when no PolicyProvider plugin is registered
+  # (demo-policy-console, when built in, takes precedence). prompt-scanner
+  # stores no tenant policies.
+  fallback_policy:
+    enabled_backends: [cf.builtin.always_allow, cf.builtin.regex_scanner, cf.builtin.onnx_pii]
+    default_action: allow

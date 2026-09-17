@@ -1482,7 +1482,7 @@ mini-chat-down:
 
 # -------- Main targets --------
 
-.PHONY: all dist check gear-ci ci ci_test ci_docs build build-debug .cargo-build .split-debug quickstart example mini-chat mini-chat-docker mini-chat-helm mini-chat-helm-template mini-chat-up mini-chat-down mini-chat-port-forward full-make-matrix
+.PHONY: all dist check gear-ci ci ci_test ci_docs build build-debug .cargo-build .split-debug quickstart example mini-chat mini-chat-docker mini-chat-helm mini-chat-helm-template mini-chat-up mini-chat-down mini-chat-port-forward full-make-matrix genai-security genai-security-setup onnx-models-fetch onnxruntime-fetch
 
 # Start server with quickstart config
 quickstart:
@@ -1507,6 +1507,31 @@ endif
 else
 	cargo run --bin $(EXAMPLE_SERVER_BIN) $(GEAR_SERVER_FEATURE_ARGS) -- --config config/quickstart.yaml run $(GEAR_RUN_ARGS)
 endif
+
+## Fetch the pinned onnx-runner model artifacts (minilm-l6-pii) that
+## config/genai-security.yaml's onnx-scanner backend needs — run once before
+## 'make genai-security' if gears/onnx-runner/models/ is empty.
+genai-security-setup: onnx-models-fetch onnxruntime-fetch
+
+## Download onnx-runner's model artifacts by pinned revision, with sha256
+## verification (see gears/onnx-runner/docs/DESIGN.md's "Model provisioning"
+## decision — dev/CI/testing convenience only).
+onnx-models-fetch:
+	bash gears/onnx-runner/scripts/fetch-models.sh
+
+## Download the ONNX Runtime shared library that file-parser (magika feature)
+## and onnx-runner both dlopen at run time. Required because the workspace pins
+## `ort` with `load-dynamic`; without it `ort` 2.0.0-rc.12 hangs instead of
+## erroring. Same script CI uses, so the pinned version cannot drift.
+onnxruntime-fetch:
+	bash scripts/fetch-onnxruntime.sh
+
+## Run the GenAI Security pipeline: forward-proxy + prompt-scanner + its
+## scanner backend plugins (all one process, config/genai-security.yaml),
+## no Python dependencies. Ctrl+C tears it down. Run 'make genai-security-setup'
+## once first to fetch onnx-scanner's model.
+genai-security:
+	./scripts/run-genai-security.sh
 
 ## Run server with fips gear
 fips:

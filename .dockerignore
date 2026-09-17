@@ -50,3 +50,11 @@ id_ed25519*
 .aws
 .gcloud
 .kube
+
+# Large runtime artifacts, never needed in a build context. Models and the ONNX
+# Runtime are provisioned by an operator at run time, by design
+# (cpt-cf-onnx-runner-constraint-model-artifacts-not-vcs), and the benchmark
+# bundle assembles them outside the image.
+gears/onnx-runner/models
+.onnxruntime
+dist

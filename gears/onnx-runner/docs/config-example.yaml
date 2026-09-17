@@ -1,0 +1,225 @@
+# onnx-runner gear example operator configuration.
+#
+# Reference docs:
+#   - DESIGN.md §3.2 (session replicas), §3.4 (bounds), §4 decision 2 (pool sizing)
+#   - ADR/0006 (bounds, defaults, and the honest limits of timeout semantics)
+#   - ADR/0005 (degraded startup, and why `require_all_models` defaults to permissive)
+#   - ../onnx-runner/README.md (the short version, plus measured replica/thread guidance)
+#
+# Schema source of truth: cf-gears-onnx-runner `crate::config::OnnxRunnerConfig`
+# and `crate::config::ModelConfig`.
+#
+# `#[serde(deny_unknown_fields)]` is set on both structs, so:
+#   - most fields are OPTIONAL — omitted fields fall back to the default shown here
+#   - any UNKNOWN field rejects gear init (loud misconfig surface, not a silent ignore)
+#   - the required fields are called out individually below
+#
+# Durations are humantime strings ("30s", "2m", "500ms"), NOT integer seconds. Other
+# gears in this repo use integer seconds; this one does not.
+#
+# ---- Where this file goes ---------------------------------------------------
+#
+# This is the bare body of the gear's `config:` block. In a server config it nests
+# one level down under the gear name:
+#
+#   gears:
+#     onnx-runner:
+#       config:
+#         models: [...]
+#
+# If instead you drop a file into a `gears_dir` overlay (AppConfig.gears_dir), the
+# file stem is the gear name and its top level is the *gear entry*, so the file must
+# itself begin with `config:`. One level of nesting separates the two placements;
+# getting it wrong yields a gear that silently runs with defaults, because a missing
+# `config` key falls back to `Default::default()` rather than erroring.
+
+# =============================================================================
+# Startup policy
+# =============================================================================
+
+# Fail startup if any configured model cannot be loaded.
+#
+# Defaults to `false`, and the permissive default is deliberate: a bad artifact makes
+# *that* model unavailable and leaves the rest serving, because this gear shares a
+# process with every other gear and must not take them down with it. Callers get a
+# typed `ModelUnavailable` carrying a stable reason, distinct from `UnknownModel`.
+#
+# That default is only safe if consumers hold up their end: an unavailable model must
+# surface as degraded coverage, because a scan that could not run is not a clean scan.
+# A consumer that maps `ModelUnavailable` to "no findings" turns this into a silent
+# security failure.
+#
+# Set `true` for deployments that would rather not start at all than start degraded —
+# which is the right choice for a single-purpose scanner.
+require_all_models: false
+
+# =============================================================================
+# Models
+#
+# Every model is loaded eagerly at startup and addressed by `model_id`. A caller
+# never supplies a path (cpt-cf-onnx-runner-constraint-no-caller-paths), and the gear
+# never fetches anything in production — an operator places verified files on disk.
+# =============================================================================
+models:
+  # ---------------------------------------------------------------------------
+  # gliner2-pii — fully annotated: every knob, including the ones left at their
+  # default, so the whole surface is visible in one place.
+  #
+  # A GLiNER2 span model. Note it is NOT the ordinary BERT-ish shape: four inputs,
+  # two outputs. Fetch with `make onnx-models-fetch`.
+  # ---------------------------------------------------------------------------
+  - # REQUIRED. The id callers pass to `run` / `encode` / `encode_fragment`.
+    model_id: "gliner2-pii"
+
+    # REQUIRED. Directory holding the model file, tokenizer, and any sidecars.
+    model_dir: "./gears/onnx-runner/models/gliner2-pii"
+
+    # Default: "model.onnx". This model ships a quantized export under a different
+    # name, which is exactly why the field exists.
+    model_file: "model.quantized.onnx"
+
+    # Default: "tokenizer.json".
+    tokenizer_file: "tokenizer.json"
+
+    # Default: "config.json". Optional `id2label` sidecar, served on
+    # `LoadedModelInfo.labels`. This model publishes none and none is fetched —
+    # correct, not an oversight: a zero-shot span model takes its labels per
+    # request, so it has no fixed label set to declare. Absent or malformed
+    # metadata yields `labels: None` and never fails the load.
+    labels_file: "config.json"
+
+    # REQUIRED. Hex SHA-256 of the model file, verified on every load. This is the
+    # integrity control: pinning the digest is what makes a swapped artifact a
+    # startup failure instead of a quietly different answer.
+    sha256: "489edc522a34b8c6a0630c4710998abf0227b11acf45600ba2bce95bcd943930"
+
+    # Default: false. Skips the digest check. Local development only — never in a
+    # deployment, where it disables the only artifact-integrity guarantee there is.
+    skip_checksum: false
+
+    # ---- Graph contract ----
+    #
+    # REQUIRED, both. Verified against the graph's own metadata at load, order
+    # independent. Naming the contract in configuration rather than reading it off
+    # the graph is what turns a swapped model into a startup error.
+    #
+    # Careful with input names: the declared set is not a property of the file
+    # alone. Session options move it — a BERT-family export may or may not declare
+    # `token_type_ids` depending on how the session was built — so read the contract
+    # from a session built the way this gear builds one, not from a plain probe.
+    expected_inputs:
+      - "input_ids"
+      - "attention_mask"
+      - "text_word_indices"
+      - "schema_special_indices"
+    expected_outputs:
+      - "span_probs"
+      - "count_logits"
+
+    # REQUIRED, and every declared output needs an entry. One of: i64 | f32 | u8 | bool.
+    #
+    # A missing entry fails startup by design. It used to default to f32, which
+    # reinterpreted the bytes of an i64 output as floats — plausible wrong numbers
+    # rather than an error, which is the worst failure this gear can produce.
+    output_dtypes:
+      span_probs: f32
+      count_logits: f32
+
+    # ---- Concurrency and threads ----
+    #
+    # `replicas × intra_threads` is the thread budget; `replicas × model size` is the
+    # memory cost. The replica pool is mandatory, not a tuning choice: ONNX Runtime's
+    # `Run` is not thread-safe, so one session cannot serve concurrent calls.
+    #
+    # The split is by CONCURRENCY, not by input size. One caller cannot keep several
+    # replicas busy, so threads win; at four or more concurrent callers replicas win,
+    # and by a wide margin — at a fixed 48-thread budget, 24 thin replicas sustain
+    # roughly four times the throughput of one 48-thread session, because a single
+    # session cannot spread threads across sockets. Input size moves the margin,
+    # never the winner.
+    #
+    #   Concurrent load, server, large model   12 replicas x 4 threads
+    #   Concurrent load, server, small model   24 x 2
+    #   Concurrent load, laptop-class           4 x 1
+    #   Serial / single caller                  1 x all available cores
+    #
+    # Do not simply maximize replicas: 24 buys 23% more throughput than 6 for 3.6x
+    # the memory, and is slower at long prompts. This model is ~446 MB on disk and
+    # roughly 4x that resident, so each replica is expensive.
+    #
+    # Default: 4.
+    replicas: 4
+    # Default: 1.
+    intra_threads: 1
+
+    # ---- Bounds ----
+    #
+    # Defaults are chosen to be safe for an untrusted caller, because defaults are
+    # what people actually deploy and the content flowing through this gear is
+    # attacker-controlled by construction. They are generous enough that a normal
+    # consumer never meets them. Every violation is a typed rejection raised BEFORE
+    # allocation, naming the tensor.
+
+    # Default: 16777216 (16Mi) elements — 64 MiB as f32, 128 MiB as i64.
+    max_tensor_elements: 16777216
+    # Default: 32. Input tensors accepted in one `run` call.
+    max_input_tensors: 32
+    # Default: 1048576. Largest extent of any single dimension.
+    max_dimension: 1048576
+    # Default: 1048576 (1 MiB) of UTF-8 accepted by `encode` / `encode_fragment`.
+    # Oversized text is REJECTED, never silently truncated: truncation is a policy
+    # with consequences for detection coverage, and this layer does not own it.
+    max_text_bytes: 1048576
+
+    # ---- Deadline and load shedding ----
+
+    # Default: "30s". Wall-clock budget for one inference.
+    #
+    # Read this honestly: on expiry the caller gets `Timeout`, but the work is
+    # ABANDONED, NOT CANCELLED. ONNX Runtime has no mid-graph cancellation, so the
+    # replica stays busy until the underlying call returns. A short timeout under
+    # sustained load therefore sheds callers without freeing capacity.
+    inference_timeout: "30s"
+
+    # Default: unset, meaning the replica count.
+    #
+    # More in flight than there are replicas is queueing, not parallelism, and
+    # unbounded queueing is what this cap exists to stop. Raise it only deliberately
+    # — for instance to absorb bursty arrivals — and expect the extra calls to wait.
+    max_in_flight: 4
+
+    # Default: queue. What happens once `max_in_flight` is reached.
+    #
+    #   queue  — wait for a permit, bounded by `inference_timeout`. A consumer's own
+    #            deadline is usually a better place to give up than an arbitrary
+    #            queue depth here.
+    #   reject — fail immediately with `Overloaded`, for deployments that would
+    #            rather shed load than let it accumulate.
+    #
+    # Whichever you pick, count `Overloaded` and `Timeout` separately in whatever
+    # reads this gear's metrics: throughput measured over a denominator that includes
+    # shed calls is not throughput.
+    on_overload: queue
+
+  # ---------------------------------------------------------------------------
+  # piiranha-v1 — the same thing with every default accepted. This is what a model
+  # entry actually looks like in practice: six required fields and the filename.
+  #
+  # An ordinary BIO token classifier, and the model `examples/pii_scan.rs` runs.
+  # Unlike gliner2-pii it does publish an `id2label` map in `config.json`, so
+  # `LoadedModelInfo.labels` is populated — which is what a BIO decoder needs to
+  # turn class ids back into entity tags.
+  # ---------------------------------------------------------------------------
+  - model_id: "piiranha-v1"
+    model_dir: "./gears/onnx-runner/models/piiranha-v1"
+    model_file: "model_int8.onnx"
+    sha256: "d5f4d139371b9eeab687d705604e928c46a28a8169654323888bb3160e839076"
+    # This export declares `token_type_ids`; not every BERT-family export does.
+    expected_inputs:
+      - "input_ids"
+      - "attention_mask"
+      - "token_type_ids"
+    expected_outputs:
+      - "logits"
+    output_dtypes:
+      logits: f32

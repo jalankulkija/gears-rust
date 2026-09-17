@@ -57,7 +57,7 @@ jobs:
     outputs:
       rust:   ${{ steps.filter.outputs.rust }}
       fips:   ${{ steps.filter.outputs.fips }}
-      magika: ${{ steps.filter.outputs.magika }}
+      onnxruntime: ${{ steps.filter.outputs.onnxruntime }}
       onnx_embedding: ${{ steps.filter.outputs.onnx_embedding }}
       graph_storage: ${{ steps.filter.outputs.graph_storage }}
       dylint: ${{ steps.filter.outputs.dylint }}
@@ -91,8 +91,12 @@ jobs:
               - 'libs/toolkit/**'
               - 'libs/toolkit-http/**'
               - 'libs/rustls-*/**'
-            magika:
+            # Everything that reaches ONNX Runtime, plus the script that
+            # provisions it. See the test-onnxruntime job.
+            onnxruntime:
               - 'gears/file-parser/**'
+              - 'gears/onnx-runner/**'
+              - 'scripts/fetch-onnxruntime.sh'
             onnx_embedding:
               - 'gears/graph-storage/onnx-embedding-plugin/**'
               - 'gears/graph-storage/graph-storage-sdk/**'
@@ -773,7 +777,7 @@ jobs:
   # is the only way this crate is checked at all: without artifacts its tests
   # skip, and a skipped test proves nothing about pooling, tokenization or the
   # vectors that come out. Both downloads are pinned by SHA-256; the runtime is
-  # fetched the same way `test-magika` fetches it, and for the same reason
+  # fetched the same way `test-onnxruntime` fetches it, and for the same reason
   # (`ort`'s `download-binaries` conflicts with the workspace's `load-dynamic`
   # and deadlocks the rc we pin).
   test-onnx-embedding:
@@ -864,7 +868,7 @@ jobs:
       - name: cargo check (graph-storage with the onnx feature)
         run: cargo check -p cf-gears-graph-storage --features onnx
 
-  # Builds and tests file-parser's optional `magika` feature so it doesn't
+  # Builds and tests everything that reaches ONNX Runtime, so it doesn't
   # silently rot. `ort`'s own `download-binaries` feature is NOT used here —
   # it always links statically, which conflicts with `load-dynamic` (baked
   # into the workspace `ort` dependency for production) and reliably
@@ -875,25 +879,17 @@ jobs:
   # real ONNX Runtime shared library and points `ORT_DYLIB_PATH` at it —
   # exactly the mechanism production uses. `timeout-minutes` on the test step
   # is a backstop in case a future regression reintroduces that hang.
-  test-magika:
-    name: Magika feature verification
+  test-onnxruntime:
+    name: ONNX Runtime consumers (file-parser magika, onnx-runner)
     needs: changes
     if: >-
       !cancelled()
       && (needs.changes.result != 'success'
-      || needs.changes.outputs.magika == 'true'
+      || needs.changes.outputs.onnxruntime == 'true'
       || needs.changes.outputs.deps == 'true'
       || needs.changes.outputs.ci == 'true'
       || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    env:
-      # api-24 (see workspace Cargo.toml `ort` entry) requires an ONNX
-      # Runtime with minor version >= 24; older builds fail `ort`'s version
-      # check on load. Bump alongside `ort`'s pinned version.
-      ONNXRUNTIME_VERSION: "1.29.0"
-      # sha256 of onnxruntime-linux-x64-1.29.0.tgz. Recompute and bump
-      # alongside ONNXRUNTIME_VERSION.
-      ONNXRUNTIME_SHA256: "c3fddc4f139a045b0c4902c57410f0694f1c2fdf9b6939fbe38b1aeae7cd14ba"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -930,20 +926,32 @@ jobs:
             echo "sccache failed, falling back to plain rustc"
           fi
 
+      # Version and per-platform checksums live in the script, so local dev
+      # and CI cannot drift apart. See scripts/fetch-onnxruntime.sh.
       - name: Fetch ONNX Runtime shared library
         shell: bash
-        run: |
-          set -euo pipefail
-          curl -sL --fail -o /tmp/onnxruntime.tgz \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz"
-          echo "${ONNXRUNTIME_SHA256}  /tmp/onnxruntime.tgz" | sha256sum --check
-          tar xzf /tmp/onnxruntime.tgz -C /tmp
-          echo "ORT_DYLIB_PATH=/tmp/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}/lib/libonnxruntime.so" >> "$GITHUB_ENV"
+        run: echo "ORT_DYLIB_PATH=$(bash scripts/fetch-onnxruntime.sh --path)" >> "$GITHUB_ENV"
 
       - name: cargo test (file-parser, magika feature)
         shell: bash
         timeout-minutes: 10
         run: cargo test -p cf-gears-file-parser --features magika
+
+      # Same runtime, same failure mode, the other consumer. This now includes
+      # a real ONNX session: the suite runs against a committed 285-byte
+      # fixture, so it needs no model download.
+      - name: cargo test (onnx-runner)
+        shell: bash
+        timeout-minutes: 10
+        run: cargo test -p cf-gears-onnx-runner
+
+      # The suites that need the real ~450 MB models stay out of CI, but are
+      # compiled here so they cannot bit-rot behind their feature flag while
+      # nothing builds them.
+      - name: cargo test --no-run (onnx-runner, real-model suites)
+        shell: bash
+        timeout-minutes: 10
+        run: cargo test -p cf-gears-onnx-runner --features real-model-tests --no-run
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23

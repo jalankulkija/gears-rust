@@ -1,0 +1,15 @@
+# gliner2-pii -> canonical. Categories are the runtime labels themselves,
+# lowercase, so this map is really a rename of what we asked it for.
+person=PERSON
+email=EMAIL
+phone_number=PHONE
+address=ADDRESS
+date_of_birth=DOB
+national_id_number=ID
+passport_number=ID
+drivers_license_number=ID
+card_number=CREDIT_CARD
+bank_account=ACCOUNT
+ip_address=IP
+username=USERNAME
+organization=ORG

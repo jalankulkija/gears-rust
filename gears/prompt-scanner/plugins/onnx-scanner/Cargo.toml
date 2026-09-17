@@ -1,0 +1,73 @@
+[package]
+name = "cf-gears-onnx-scanner"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ONNX-model-backed PII detector plugin for prompt-scanner, calling onnx-runner"
+repository.workspace = true
+keywords = ["constructorfabric", "cf-gears"]
+categories = ["web-programming"]
+metadata.docs.rs.all-features = true
+
+[lib]
+name = "onnx_scanner"
+
+[lints]
+workspace = true
+
+[features]
+# Detection-quality evaluation tooling (docs/benchmarks/QUALITY-EVALUATION.md).
+# Off by default: it pulls in JSON parsing and a direct `ort` probe that the
+# shipped plugin has no business carrying.
+eval = ["dep:serde_json", "dep:tokio-util"]
+
+# Needs `eval`; without this, `cargo test` would try to build it unconditionally.
+[[bin]]
+name = "evaluate"
+required-features = ["eval"]
+
+[dependencies]
+# Local dependencies
+prompt-scanner-sdk = { package = "cf-gears-prompt-scanner-sdk", version = "0.1.0", path = "../../prompt-scanner-sdk" }
+onnx-runner-sdk = { package = "cf-gears-onnx-runner-sdk", version = "0.1.0", path = "../../../onnx-runner/onnx-runner-sdk" }
+# Required only for the `#[toolkit::gear(deps=[onnx_runner])]` macro to
+# resolve the extern crate at compile time — see
+# `gears/onnx-runner/docs/DESIGN.md`'s "onnx-scanner" section.
+onnx-runner = { package = "cf-gears-onnx-runner", version = "0.1.0", path = "../../../onnx-runner/onnx-runner" }
+types-registry-sdk = { package = "cf-gears-types-registry-sdk", version = "0.3.2", path = "../../../system/types-registry/types-registry-sdk" }
+types-registry = { workspace = true }
+
+# ToolKit dependencies
+toolkit = { workspace = true }
+toolkit-macros = { workspace = true }
+toolkit-security = { workspace = true }
+
+# Async runtime
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+# GLiNER2 word splitting
+regex = { workspace = true }
+
+# Data types
+uuid = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Required by toolkit::gear macro
+inventory = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+tempfile = { workspace = true }

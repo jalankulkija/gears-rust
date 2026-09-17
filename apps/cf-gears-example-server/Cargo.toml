@@ -69,6 +69,13 @@ bss-products = ["dep:bss_products"]
 bss-pricing = ["dep:bss_pricing", "bss-products"]
 bss-approvals = ["dep:bss_approvals"]
 admission-control = ["dep:admission-control"]
+prompt-scanner-example = ["dep:prompt_scanner", "dep:always_allow_plugin", "dep:regex_scanner", "dep:onnx_runner", "dep:onnx_scanner"]
+forward-proxy-example = ["prompt-scanner-example", "dep:forward_proxy", "dep:openai_interceptor_plugin"]
+# Temporary demo control panel for prompt-scanner's PII detection — see
+# gears/prompt-scanner/docs/POLICY_PROVIDER_AND_DEMO_CONSOLE.md. Independent
+# of forward-proxy-example (it only needs prompt-scanner-example), but the
+# GenAI Security demo pipeline enables both.
+demo-policy-console = ["prompt-scanner-example", "dep:demo_policy_console"]
 
 [dependencies]
 mimalloc = { workspace = true }
@@ -151,6 +158,18 @@ bss_approvals = { package = "cf-gears-bss-approvals", path = "../../gears/bss/ap
 
 # Optional Admission Control gear
 admission-control = { package = "cf-gears-admission-control", path = "../../gears/system/admission-control/admission-control", optional = true }
+
+# Optional prompt-scanner gear + its scanner backend plugins
+prompt_scanner = { package = "cf-gears-prompt-scanner", path = "../../gears/prompt-scanner/prompt-scanner", optional = true }
+always_allow_plugin = { package = "cf-gears-always-allow-plugin", path = "../../gears/prompt-scanner/plugins/always-allow-plugin", optional = true }
+regex_scanner = { package = "cf-gears-regex-scanner", path = "../../gears/prompt-scanner/plugins/regex-scanner", optional = true }
+onnx_runner = { package = "cf-gears-onnx-runner", path = "../../gears/onnx-runner/onnx-runner", optional = true }
+onnx_scanner = { package = "cf-gears-onnx-scanner", path = "../../gears/prompt-scanner/plugins/onnx-scanner", optional = true }
+demo_policy_console = { package = "cf-gears-demo-policy-console", path = "../../gears/prompt-scanner/plugins/demo-policy-console", optional = true }
+
+# Optional forward-proxy gear + its OpenAI/ChatGPT traffic handler plugin
+forward_proxy = { package = "cf-gears-forward-proxy", path = "../../gears/forward-proxy/forward-proxy", optional = true }
+openai_interceptor_plugin = { package = "cf-gears-openai-interceptor-plugin", path = "../../gears/forward-proxy/plugins/openai-interceptor-plugin", optional = true }
 
 # Optional example module
 users-info = { path = "../../examples/toolkit/users-info/users-info", optional = true }

@@ -1,0 +1,59 @@
+[package]
+name = "cf-gears-demo-policy-console"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Temporary demo control panel for prompt-scanner: toggles PII detection + response action, shows the audit log. Not a real PolicyProvider adapter — see docs/POLICY_PROVIDER_AND_DEMO_CONSOLE.md."
+repository.workspace = true
+keywords = ["constructorfabric", "cf-gears"]
+categories = ["web-programming"]
+metadata.docs.rs.all-features = true
+
+[lib]
+name = "demo_policy_console"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local dependencies
+prompt-scanner-sdk = { package = "cf-gears-prompt-scanner-sdk", version = "0.1.0", path = "../../prompt-scanner-sdk" }
+prompt-scanner = { package = "cf-gears-prompt-scanner", version = "0.1.0", path = "../../prompt-scanner" }
+types-registry-sdk = { package = "cf-gears-types-registry-sdk", version = "0.3.2", path = "../../../system/types-registry/types-registry-sdk" }
+types-registry = { workspace = true }
+
+# ToolKit dependencies
+toolkit = { workspace = true }
+toolkit-macros = { workspace = true }
+toolkit-security = { workspace = true }
+toolkit-odata = { workspace = true }
+
+# REST
+axum = { workspace = true }
+http = { workspace = true }
+utoipa = { workspace = true }
+
+# Async runtime
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+# Data types
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Required by toolkit::gear macro
+inventory = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

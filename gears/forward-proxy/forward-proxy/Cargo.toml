@@ -1,0 +1,68 @@
+[package]
+name = "cf-gears-forward-proxy"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Generic forward/MITM HTTPS proxy gear dispatching traffic through pluggable handler plugins"
+repository.workspace = true
+readme = "README.md"
+keywords = ["constructorfabric", "cf-gears"]
+categories = ["web-programming"]
+metadata.docs.rs.all-features = true
+
+[lib]
+name = "forward_proxy"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local dependencies
+forward-proxy-sdk = { package = "cf-gears-forward-proxy-sdk", version = "0.1.0", path = "../forward-proxy-sdk" }
+types-registry-sdk = { package = "cf-gears-types-registry-sdk", version = "0.3.2", path = "../../system/types-registry/types-registry-sdk" }
+types-registry = { workspace = true }
+
+# Forward/MITM proxy — default features (rcgen-ca + rustls-client + decoder) plus http2.
+# Uses hudsucker's own re-exported `hudsucker::rcgen` (not a separate rcgen
+# dependency) to avoid a version mismatch between our CA-generation code and
+# the `rcgen::Issuer`/`KeyPair` types hudsucker's `RcgenAuthority` expects.
+hudsucker = { version = "0.25", features = ["http2"] }
+
+# Async runtime
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["rt", "net", "sync", "time"] }
+tokio-util = { workspace = true }
+
+# HTTP
+http = { workspace = true }
+http-body-util = { workspace = true }
+bytes = { workspace = true }
+
+# GTS / plugin discovery
+gts = { workspace = true }
+toolkit-gts = { workspace = true }
+
+# ToolKit dependencies
+toolkit = { workspace = true }
+toolkit-macros = { workspace = true }
+toolkit-security = { workspace = true }
+
+# Error handling and serialization
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Required by toolkit::gear macro
+inventory = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Data types
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }

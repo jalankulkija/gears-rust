@@ -1,0 +1,211 @@
+# GenAI Security pipeline configuration.
+#
+# Boots forward-proxy (MITM proxy) + prompt-scanner + its scanner backend
+# plugins (regex-scanner, onnx-scanner) +
+# openai-interceptor-plugin as ONE process, no Python dependencies anywhere
+# in the pipeline. forward-proxy's openai-interceptor-plugin resolves
+# `PromptScannerClientV1` in-process via `ClientHub` — no HTTP hop, no
+# separate proxy process.
+#
+# Note: prompt-injection detection is out of scope for now — the old
+# GLiNER2-sidecar-backed `prompt-injection-plugin` (Python) was removed
+# entirely rather than kept as an external dependency. It'll come back once
+# an ONNX-exportable prompt-injection model is available — see
+# gears/onnx-runner/docs/DESIGN.md's decision #1.
+#
+# Run via `make genai-security` (see root Makefile), or directly:
+#   cargo run -p cf-gears-example-server \
+#     --features forward-proxy-example,static-tenants,static-authz \
+#     -- --config config/genai-security.yaml run
+#
+# Kept separate from config/quickstart.yaml (which wires up mini-chat,
+# account-management, BSS, etc.) so this pipeline can be reasoned about and
+# run on its own, with its own home_dir/database files.
+
+server:
+  home_dir: "~/.cf-gears-genai-security"
+
+# Per-gear YAML files in this directory are merged into `gears:` below,
+# keyed by filename (see libs/toolkit's `merge_gear_files`) — a whole-file
+# override per gear, not a deep merge. `prompt-scanner.yaml` already exists
+# here; add more per-gear files as needed instead of inlining them below.
+gears_dir: "config/gears.d"
+
+database:
+  servers:
+    sqlite_users:
+      engine: "sqlite"
+      params:
+        WAL: "true"
+        synchronous: "NORMAL"
+        busy_timeout: "5000"
+      pool:
+        max_conns: 5
+        acquire_timeout: "30s"
+
+logging:
+  default:
+    console_level: info
+    file: "logs/cf-gears.log"
+    file_level: info
+    max_age_days: 28
+    max_backups: 3
+    max_size_mb: 10
+
+gears:
+  api-gateway:
+    config:
+      bind_addr: "127.0.0.1:8087"
+      enable_docs: true
+      cors_enabled: false
+      prefix_path: "/cf"
+      openapi:
+        title: "GenAI Security Pipeline API"
+        version: "0.1.0"
+        description: "forward-proxy + prompt-scanner + scanner backends"
+      defaults:
+        body_limit_bytes: 64000000
+        rate_limit:
+          rps: 1000
+          burst: 200
+          in_flight: 64
+      # Local development only — see quickstart.yaml's own warning. Set to
+      # false and configure the authn pipeline for anything beyond a
+      # single-operator local demo.
+      auth_disabled: true
+
+  gear-orchestrator:
+    config: {}
+
+  grpc-hub:
+    config:
+      listen_addr: "uds:///tmp/cf-gears-genai-security-grpc"
+
+  # tenant-resolver and authz-resolver both need a plugin compiled in to
+  # boot at all, even with auth_disabled: true — static-tenants + static-authz
+  # (see the FEATURES var in scripts/run-genai-security.sh).
+  tenant-resolver:
+    config:
+      vendor: "constructorfabric"
+  static-tr-plugin:
+    config:
+      vendor: "constructorfabric"
+      priority: 20
+      tenants:
+        # Single root tenant — matches DEFAULT_TENANT_ID
+        # (libs/toolkit-security), what auth-disabled requests are scoped
+        # to. No multi-tenant tree needed for this pipeline.
+        - id: "00000000-df51-5b42-9538-d2b56b7ee953"
+          name: "default"
+          parent_id: null
+          status: active
+
+  authz-resolver:
+    config:
+      vendor: "constructorfabric"
+  static-authz-plugin:
+    config:
+      vendor: "constructorfabric"
+      priority: 100
+
+  resource-group:
+    database:
+      server: "sqlite_users"
+      file: "resource_group.db"
+    config: {}
+
+  simple-user-settings:
+    database:
+      server: "sqlite_users"
+      file: "settings.db"
+    config:
+      max_field_length: 100
+
+  credstore:
+    database:
+      server: "sqlite_users"
+      file: "credstore.db"
+    config:
+      vendor: "constructorfabric"
+
+  file-parser:
+    config:
+      allowed_local_base_dir: /tmp
+
+  # -------- prompt-scanner + scanner backends --------
+  # prompt-scanner itself is configured in gears.d/prompt-scanner.yaml
+  # (see gears_dir above).
+
+  regex-scanner:
+    config: {}
+
+  # `gliner2-pii` (Fastino's GLiNER2, community ONNX export
+  # yethdev/gliner2-pii-onnx) is onnx-scanner's active backend below —
+  # `minilm-l6-pii` stays configured here so `PiiBackendConfig::BioTokenClassifier`
+  # is still selectable for comparison, but isn't loaded by default (only
+  # models listed here get loaded; add its entry back to switch). Both
+  # fetched via `make onnx-models-fetch`
+  # (gears/onnx-runner/scripts/fetch-models.sh).
+  onnx-runner:
+    config:
+      models:
+        - model_id: "gliner2-pii"
+          model_dir: "./gears/onnx-runner/models/gliner2-pii"
+          model_file: "model.quantized.onnx"
+          sha256: "489edc522a34b8c6a0630c4710998abf0227b11acf45600ba2bce95bcd943930"
+          expected_inputs: ["input_ids", "attention_mask", "text_word_indices", "schema_special_indices"]
+          expected_outputs: ["span_probs", "count_logits"]
+          output_dtypes:
+            span_probs: f32
+            count_logits: f32
+          # Small local model, single-operator demo — no need for the
+          # default pool of 4 replicas.
+          replicas: 1
+
+  onnx-scanner:
+    config:
+      category_prefix: "pii"
+      backend:
+        kind: "gliner2"
+        model_id: "gliner2-pii"
+        # The label schema dlp-bench validated as `GLINER2_PII` — see that
+        # repo's src/labels.rs. Also used directly as `Finding.category`.
+        labels:
+          - "person"
+          - "email"
+          - "phone_number"
+          - "address"
+          - "date_of_birth"
+          - "national_id_number"
+          - "passport_number"
+          - "drivers_license_number"
+          - "card_number"
+          - "bank_account"
+          - "iban"
+          - "ip_address"
+          - "username"
+          - "api_key"
+          - "access_token"
+          - "password"
+          - "secret"
+        # The model card's evaluated operating points are 0.3/0.5/0.7.
+        decode_threshold: 0.5
+
+  # -------- forward-proxy + its OpenAI/ChatGPT handler plugin --------
+
+  forward-proxy:
+    config:
+      listen_addr: "127.0.0.1:8080"
+      # Relative to the process's working directory (no `~` expansion here —
+      # unlike `server.home_dir`, this is a plain path field).
+      ca_cert_path: "./data/genai-security/forward-proxy-ca.cert.pem"
+      ca_key_path: "./data/genai-security/forward-proxy-ca.key.pem"
+      # Hosts openai-interceptor-plugin knows how to handle.
+      intercept_hosts:
+        - "chat.openai.com"
+        - "chatgpt.com"
+        - "api.openai.com"
+
+  openai-interceptor-plugin:
+    config:
+      tenant_id: "00000000-df51-5b42-9538-d2b56b7ee953"

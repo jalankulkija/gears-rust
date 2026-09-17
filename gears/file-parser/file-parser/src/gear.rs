@@ -33,93 +33,22 @@ impl Default for FileParserGear {
 
 /// Why the Magika content-type detector failed to initialize.
 ///
-/// A dedicated type rather than `anyhow::Error` because two variants leave an
-/// abandoned OS thread behind, which is only sound if the caller then terminates
-/// the process. [`Self::leaked_init_thread`] makes that checkable in code rather
-/// than documented in a comment.
+/// The mechanism, and the two variants that oblige the caller to terminate the
+/// process, are documented once in [`ort_bootstrap`]. `onnx-runner` has the
+/// same problem for the same reason and uses the same helper.
 #[cfg(feature = "magika")]
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum MagikaInitError {
-    /// No result within the timeout — almost always the hang described on
-    /// [`init_magika_detector`]. The thread is abandoned, not killed.
-    #[error(
-        "Magika content-type detector did not finish loading within {}s; the ONNX Runtime is \
-         likely missing, the wrong architecture, or incompatible with the version `ort` was \
-         built against — check ORT_DYLIB_PATH (the init thread is abandoned, not killed, and \
-         will leak until the process exits)",
-        timeout.as_secs()
-    )]
-    Timeout { timeout: std::time::Duration },
-
-    /// `cancellation_token` fired before init finished. The init thread may
-    /// still be running, and may be wedged.
-    #[error("Magika content-type detector initialization cancelled by gear shutdown")]
-    Cancelled,
-
-    /// The init thread vanished without sending a result — it panicked, or the
-    /// `oneshot` sender was dropped. The thread is gone, so nothing leaks.
-    #[error("Magika detector init thread died unexpectedly: {0}")]
-    InitThreadDied(#[source] tokio::sync::oneshot::error::RecvError),
-
-    /// ONNX Runtime and the model loaded far enough to return a real error.
-    /// The init thread completed, so nothing leaks.
-    #[error("failed to load Magika content-type detector: {0}")]
-    SessionLoad(#[source] magika::Error),
-}
-
-#[cfg(feature = "magika")]
-impl MagikaInitError {
-    /// Whether this failure left an OS thread that will never be joined.
-    ///
-    /// `true` means the caller must terminate the process for the leak to stay
-    /// bounded. Note that exiting while that thread sits inside ONNX Runtime
-    /// init can abort rather than exit cleanly (ORT's `cpuinfo` asserts if
-    /// teardown races init), so the observable failure may be a signal rather
-    /// than an exit code.
-    #[must_use]
-    pub const fn leaked_init_thread(&self) -> bool {
-        match self {
-            // `Timeout` is wedged by definition. `Cancelled` may just be a
-            // thread still loading, but we cannot tell it apart from a wedged
-            // one here, so assume the worse case.
-            Self::Timeout { .. } | Self::Cancelled => true,
-            // Both mean the thread ran to completion and is gone.
-            Self::InitThreadDied(_) | Self::SessionLoad(_) => false,
-        }
-    }
-}
+pub type MagikaInitError = ort_bootstrap::BootstrapError<magika::Error>;
 
 /// Loads the Magika content-type detector eagerly at gear startup, so a
 /// missing model/runtime fails gear startup rather than the first request.
-///
-/// # The `ort` 2.0.0-rc.12 startup hang
 ///
 /// Bounded by a timeout because `ort` 2.0.0-rc.12 **hangs forever instead of
 /// erroring** when the ONNX Runtime library it `dlopen`s via `ORT_DYLIB_PATH`
 /// cannot be loaded. Reproduced: against a nonexistent path,
 /// `magika::Session::new()` returns neither `Ok` nor `Err` nor panics in 45 s.
-///
-/// Before simplifying this away, two measured facts:
-///
-/// - **No pre-flight validation exists.** `ort::init_from(path)` looks like one
-///   (takes a path, returns `Result`) but hangs on the same input, also at 45 s.
-///   Every `ort` entry point funnels through the same lazy dylib init.
-/// - **The internal mechanism is unknown.** An earlier version of this comment
-///   blamed a reentrant `ort::api()` call, which the `init_from` result
-///   disproves. Treat the hang as an observed property of a bad
-///   `ORT_DYLIB_PATH`, not as something understood well enough to narrow.
-///
-/// Since the hang cannot be interrupted from inside, the blocked thread has to be
-/// abandoned. A raw `std::thread` rather than `spawn_blocking`, because Tokio
-/// joins blocking threads on shutdown, so a wedged one would hang the whole
-/// runtime's shutdown. Only the `oneshot` receiver is awaited. See
-/// [`MagikaInitError::leaked_init_thread`] for the caller's obligation.
-///
-/// TODO: drop this once `magika`/`ort` fix the hang or offer a safe way to
-/// validate the dylib first. No upstream issue filed as of 2026-08-18; the
-/// `init_from` reproduction above is what to report against `pykeio/ort`. Check
-/// for a fix above `2.0.0-rc.12` before bumping the workspace pin.
+/// [`ort_bootstrap`] holds the mechanism, the two measured facts that constrain
+/// any simplification of it, and why the wedged thread is abandoned rather than
+/// joined. Provision a compatible runtime with `scripts/fetch-onnxruntime.sh`.
 ///
 /// # Visibility
 ///
@@ -141,42 +70,23 @@ pub async fn init_magika_detector(
     // would only delay a legible startup failure.
     const MAGIKA_INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-    // Check before spawning, not just in the `select!` below. Abandoning a
-    // thread that is midway through ONNX Runtime init can abort the process on
-    // exit (ORT's `cpuinfo` asserts if teardown races init), so if shutdown has
-    // already begun, don't start work we know we are about to discard.
-    if cancellation_token.is_cancelled() {
-        return Err(MagikaInitError::Cancelled);
-    }
-
     let supported_extensions: Vec<String> = parsers
         .iter()
         .flat_map(|p| p.supported_extensions().iter().map(|ext| (*ext).to_owned()))
         .collect();
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    std::thread::spawn(move || {
-        // The receiver may already be gone if we timed out and moved on; a
-        // dropped receiver just means `send` fails harmlessly.
-        drop(tx.send(crate::infra::MagikaDetector::with_config(
-            supported_extensions,
-            intra_op_threads,
-        )));
-    });
-
-    // Race the bounded wait against shutdown, so it doesn't block graceful
-    // shutdown for the full timeout.
-    let detector = tokio::select! {
-        result = tokio::time::timeout(MAGIKA_INIT_TIMEOUT, rx) => {
-            result
-                .map_err(|_elapsed| MagikaInitError::Timeout { timeout: MAGIKA_INIT_TIMEOUT })?
-                .map_err(MagikaInitError::InitThreadDied)?
-                .map_err(MagikaInitError::SessionLoad)?
-        }
-        () = cancellation_token.cancelled() => {
-            return Err(MagikaInitError::Cancelled);
-        }
-    };
+    let detector =
+        ort_bootstrap::Bootstrap::new("Magika content-type detector", MAGIKA_INIT_TIMEOUT)
+            .run(
+                move || {
+                    crate::infra::MagikaDetector::with_config(
+                        supported_extensions,
+                        intra_op_threads,
+                    )
+                },
+                cancellation_token,
+            )
+            .await?;
 
     info!("Magika content-type detection enabled");
     Ok(Arc::new(detector) as Arc<dyn crate::domain::detector::ContentTypeDetector>)
